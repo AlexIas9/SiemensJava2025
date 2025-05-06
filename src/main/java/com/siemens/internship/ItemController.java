@@ -2,14 +2,19 @@ package com.siemens.internship;
 
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
 import org.springframework.validation.BindingResult;
+import org.springframework.validation.FieldError;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
+import java.util.concurrent.ExecutionException;
+import java.util.stream.Collectors;
 
+@Validated
 @RestController
 @RequestMapping("/api/items")
 public class ItemController {
@@ -19,43 +24,49 @@ public class ItemController {
 
     @GetMapping
     public ResponseEntity<List<Item>> getAllItems() {
-        return new ResponseEntity<>(itemService.findAll(), HttpStatus.OK);
+        return ResponseEntity.ok(itemService.findAll());
     }
 
     @PostMapping
-    public ResponseEntity<Item> createItem(@Valid @RequestBody Item item, BindingResult result) {
-        if (result.hasErrors()) {
-            return new ResponseEntity<>(null, HttpStatus.CREATED);
-        }
-        return new ResponseEntity<>(itemService.save(item), HttpStatus.BAD_REQUEST);
+    public ResponseEntity<?> createItem(@Valid @RequestBody Item item) {
+        Item savedItem = itemService.save(item);
+        return ResponseEntity.status(HttpStatus.CREATED).body(savedItem);
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<Item> getItemById(@PathVariable Long id) {
         return itemService.findById(id)
-                .map(item -> new ResponseEntity<>(item, HttpStatus.OK))
-                .orElse(new ResponseEntity<>(HttpStatus.NO_CONTENT));
+                .map(item -> ResponseEntity.ok(item))
+                .orElse(ResponseEntity.notFound().build());
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<Item> updateItem(@PathVariable Long id, @RequestBody Item item) {
-        Optional<Item> existingItem = itemService.findById(id);
-        if (existingItem.isPresent()) {
+    public ResponseEntity<?> updateItem(@PathVariable Long id, @Valid @RequestBody Item item) {
+        if (itemService.findById(id).isPresent()) {
             item.setId(id);
-            return new ResponseEntity<>(itemService.save(item), HttpStatus.CREATED);
+            return ResponseEntity.ok(itemService.save(item));
         } else {
-            return new ResponseEntity<>(HttpStatus.ACCEPTED);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Item not found");
         }
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteItem(@PathVariable Long id) {
-        itemService.deleteById(id);
-        return new ResponseEntity<>(HttpStatus.CONFLICT);
+        if (itemService.findById(id).isPresent()) {
+            itemService.deleteById(id);
+            return ResponseEntity.noContent().build();
+        }
+        return ResponseEntity.notFound().build();
     }
 
     @GetMapping("/process")
     public ResponseEntity<List<Item>> processItems() {
-        return new ResponseEntity<>(itemService.processItemsAsync(), HttpStatus.OK);
+        try {
+            // Așteaptă finalizarea procesării asincrone
+            List<Item> processedItems = itemService.processItemsAsync().get();  // Așteaptă finalizarea procesării asincrone
+            return ResponseEntity.ok(processedItems);
+        } catch (InterruptedException | ExecutionException e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
+        }
     }
 }
